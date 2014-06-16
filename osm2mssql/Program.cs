@@ -318,11 +318,25 @@ namespace osm2mssql
 
         static void CreateIndexes(DataSource OGRDataSource, string MSSQLConnectionString)
         {
-            Envelope extent = new Envelope();
+            // Create coordinate transformation
+            SpatialReference sourceSRS = new SpatialReference("");
+            sourceSRS.ImportFromEPSG(4326);
+            SpatialReference targetSRS = new SpatialReference("");
+            targetSRS.ImportFromEPSG(900913);
+            CoordinateTransformation transform = new CoordinateTransformation(sourceSRS, targetSRS);
+
             for (int iLayer = 0; iLayer < OGRDataSource.GetLayerCount(); iLayer++)
             {
                 Layer OGRLayer = OGRDataSource.GetLayerByIndex(iLayer);
                 string layerName = OGRLayer.GetName();
+
+                // Get extent in EPSG:900913
+                Envelope extent = new Envelope();
+                OGRLayer.GetExtent(extent,0);
+                double[] ll = new double[] { extent.MinX, extent.MinY };
+                double[] ur = new double[] { extent.MaxX, extent.MaxY };
+                transform.TransformPoint(ll);
+                transform.TransformPoint(ur);
 
                 using (SqlConnection con = new SqlConnection(MSSQLConnectionString))
                 {
@@ -340,7 +354,7 @@ namespace osm2mssql
 
                         // Create spatial index
                         OGRLayer.GetExtent(extent, 0);
-                        string sidxSQL = string.Format("CREATE SPATIAL INDEX sidx_{0}_ogr_geometry ON [{0}](ogr_geometry) WITH (BOUNDING_BOX = ( {1}, {2}, {3}, {4} ), SORT_IN_TEMPDB = ON );", layerName, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
+                        string sidxSQL = string.Format("CREATE SPATIAL INDEX sidx_{0}_ogr_geometry ON [{0}](ogr_geometry) WITH (BOUNDING_BOX = ( {1}, {2}, {3}, {4} ), SORT_IN_TEMPDB = ON );", layerName, ll[0], ll[1], ur[0], ur[1]);
                         using (SqlCommand sidxCmd = new SqlCommand(sidxSQL, con))
                         {
                             log(TraceLevel.Info, string.Format("Creating spatial index sidx_{0}_ogr_geometry on table {0}...", layerName));
