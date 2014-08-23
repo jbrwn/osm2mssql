@@ -48,7 +48,7 @@ namespace osm2mssql
             DataSource OGRDataSource = Ogr.Open(ConfigurationManager.AppSettings["OSMFile"], 0);
 
             // Drop SQL tables 
-            DropTables(OGRDataSource, MSSQLConnectionString);
+            //DropTables(OGRDataSource, MSSQLConnectionString);
 
             // Create SQL tables and return ADO.NET DataSet of with DataTables
             // DataTables will be used buffer records before SQL bulk insert
@@ -157,6 +157,14 @@ namespace osm2mssql
                 }
                 SQLCreateCmd.Append("[ogr_geometry] [GEOMETRY]);");
 
+                //geometry_columns metadata
+                string SQLGeometryColumnsCmd = string.Format(@"IF OBJECT_ID('dbo.geometry_columns') IS NOT NULL
+                    INSERT INTO [dbo].[geometry_columns] ([f_table_catalog],[f_table_schema],[f_table_name],[f_geometry_column],[coord_dimension],[srid],[geometry_type])
+                    VALUES (DB_NAME(),SCHEMA_NAME(),'{0}','ogr_geometry',2,900913,'{1}')",
+                    layerName,
+                    OGRLayer.GetGeomType().ToString().Replace("wkb","")
+                );
+
                 // Construct SQL statement used to get table schema
                 // We use this to set a DataTable object schema after we create the SQL table
                 string SQLSchemaCmd = string.Format("SET FMTONLY ON; SELECT * FROM [{0}]; SET FMTONLY OFF;", layerName);
@@ -193,6 +201,20 @@ namespace osm2mssql
                     {
                         log(TraceLevel.Error, e.Message);
                         Environment.Exit(1);
+                    }
+
+                    //insert geoemtry_columns record
+                    try
+                    {
+                        using (SqlCommand cmd = new SqlCommand(SQLGeometryColumnsCmd, con))
+                        {
+                            log(TraceLevel.Info, string.Format("Update geometry_columns metadata for {0}...", layerName));
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        log(TraceLevel.Warning, e.Message);
                     }
                 }
             }
@@ -278,7 +300,9 @@ namespace osm2mssql
                         // Set ogr_geometry buffer column from WKB
                         try
                         {
-                            row["ogr_geometry"] = SqlGeometry.STGeomFromWKB(new SqlBytes(geomBuffer), 900913);
+                            SqlGeometry sqlGeom = SqlGeometry.STGeomFromWKB(new SqlBytes(geomBuffer), 900913);
+                            row["ogr_geometry"] = sqlGeom.MakeValid();
+
                             // Add row to buffer
                             buffer.Rows.Add(row);
                         }
