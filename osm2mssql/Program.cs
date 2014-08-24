@@ -155,7 +155,8 @@ namespace osm2mssql
                     FieldDefn OGRFieldDef = OGRLayerDef.GetFieldDefn(iField);
                     SQLCreateCmd.Append(string.Format("[{0}] " + "[VARCHAR](MAX), ", OGRFieldDef.GetName()));
                 }
-                SQLCreateCmd.Append("[ogr_geometry] [GEOMETRY]);");
+                SQLCreateCmd.Append("[ogr_geometry] [GEOMETRY],");
+                SQLCreateCmd.Append("[ogr_geometry_area] [FLOAT]);");
 
                 //geometry_columns metadata
                 string SQLGeometryColumnsCmd = string.Format(@"IF OBJECT_ID('dbo.geometry_columns') IS NOT NULL
@@ -300,8 +301,9 @@ namespace osm2mssql
                         // Set ogr_geometry buffer column from WKB
                         try
                         {
-                            SqlGeometry sqlGeom = SqlGeometry.STGeomFromWKB(new SqlBytes(geomBuffer), 900913);
-                            row["ogr_geometry"] = sqlGeom.MakeValid();
+                            SqlGeometry sqlGeom = SqlGeometry.STGeomFromWKB(new SqlBytes(geomBuffer), 900913).MakeValid();
+                            row["ogr_geometry"] = sqlGeom;
+                            row["ogr_geometry_area"] = sqlGeom.STArea().Value;
 
                             // Add row to buffer
                             buffer.Rows.Add(row);
